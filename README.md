@@ -114,7 +114,7 @@ Replace `amplify` with any command name to install just that one.
 
 Free means we see which of her commands you use and whether they worked. Never what you typed, never what she wrote. Need her fully private? That is Friday SUPPORT.
 
-Your install reports three small, content-free events: that you installed, which of the 25 commands you ran (a command you wrote yourself is reported as `custom`, never by name), and whether that command wrote its file. No prompt text, no file contents, no names, no paths ever leave your machine. Every message posted is also appended to `friday/usage-sent.jsonl` on your own machine, so you can check exactly what was sent rather than take our word for it.
+Your install reports three small, content-free events: that you installed, which of the 26 commands you ran (a command you wrote yourself is reported as `custom`, never by name), and whether that command wrote its file. No prompt text, no file contents, no names, no paths ever leave your machine. Every message posted is also appended to `friday/usage-sent.jsonl` on your own machine, so you can check exactly what was sent rather than take our word for it.
 
 ---
 

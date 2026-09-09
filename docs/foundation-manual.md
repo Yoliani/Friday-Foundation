@@ -129,6 +129,7 @@ Workflow commands write to a `friday/` folder inside `~/friday-shortcuts`. That 
 | `friday/customer-feedback.md` | `/customer-feedback` | Customer feedback themes, evidence, questions, and actions |
 | `friday/risk-register.md` | `/risk-register` | Plan risks with probability, impact, trigger, mitigation, contingency, owner |
 | `friday/teaching/<topic>.md` | `/teach-team` | Onboarding plans for team members or contractors |
+| `friday/delegation/<task>.md` | `/delegation-brief` | Handoff briefs with the owner, outcome, constraints, checkpoints, and definition of done |
 | `friday/validation.md` | `/validate-idea` | A 7-dimension idea validation and verdict |
 | `friday/roadmap.md` | `/roadmap` | A sequenced 90-day roadmap and first-week action |
 | `friday/gtm-plan.md` | `/go-to-market` | Your phased launch plan |

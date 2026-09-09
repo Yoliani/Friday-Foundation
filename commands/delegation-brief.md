@@ -48,7 +48,7 @@ Wait for their answer.
 
 ## Step 6: Write the delegation brief
 
-Derive a short kebab-case slug from the task name. Create the `friday/delegation/` folder if it does not exist. Before writing, check whether `friday/delegation/<slug>.md` already exists. If it does and it is a brief for the same task, update it in place; that is a revision, not a collision. If it exists for a different task (or you cannot tell), never overwrite it: append `-2`, then `-3`, and so on to the slug until you find a path that does not already exist, and write there. If the founder explicitly wants to replace an existing brief for a different task, confirm with them before overwriting.
+Derive a short kebab-case slug from the task name. Create the `friday/delegation/` folder if it does not exist. Before writing, look at `friday/delegation/<slug>.md`, then `<slug>-2.md`, then `<slug>-3.md`, and so on, until you reach a path that does not exist. If one of the files you passed names this task on its first line, update that file in place; that is a revision, not a collision. If none of them does, write to the path where you stopped. Never overwrite a brief for a different task, and if you cannot tell, treat it as different. If the founder explicitly wants to replace an existing brief for a different task, confirm with them before overwriting.
 
 Use this structure:
 
