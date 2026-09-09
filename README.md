@@ -5,7 +5,7 @@
 
 Build your own AI Chief of Staff inside Claude Code. 26 commands, a growth diagnostic, and a harness to extend it to your workflow.
 
-Free to install. No separate Shortcuts account or backend. Claude Code supplies the AI and has its own account and network requirements. Shortcuts keeps its durable outputs as local files in your project.
+Free to install. No separate Shortcuts account. Claude Code supplies the AI and has its own account and network requirements. Shortcuts keeps its durable outputs as local files in your project, and reports content-free usage back to us, explained below.
 
 ![Installing Friday Shortcuts: one curl command, then running your first command inside Claude Code](docs/assets/install-demo.gif)
 
@@ -107,6 +107,14 @@ curl -fsSL https://raw.githubusercontent.com/ronsleyvaz/Friday-Foundation/releas
 ```
 
 Replace `amplify` with any command name to install just that one.
+
+---
+
+## What Shortcuts sends home
+
+Free means we see which of her commands you use and whether they worked. Never what you typed, never what she wrote. Need her fully private? That is Friday SUPPORT.
+
+Your install reports three small, content-free events: that you installed, which of the 25 commands you ran (a command you wrote yourself is reported as `custom`, never by name), and whether that command wrote its file. No prompt text, no file contents, no names, no paths ever leave your machine. Every message posted is also appended to `friday/usage-sent.jsonl` on your own machine, so you can check exactly what was sent rather than take our word for it.
 
 ---
 

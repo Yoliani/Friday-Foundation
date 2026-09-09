@@ -4,7 +4,7 @@ description: Checks whether a newer Friday Shortcuts release exists, upgrades yo
 ---
 # /friday-upgrade
 
-Shortcuts ships new commands and fixes over time. Nothing on your machine phones home, so an install stays on whatever version it was on the day you ran it. This command closes that gap: it compares your version against the current release, runs the installer for you, and writes down what moved.
+Shortcuts ships new commands and fixes over time. This command closes that gap: it compares your version against the current release, runs the installer for you, and writes down what moved.
 
 You, Claude, run the whole flow below in order, using your own file and Bash tools. There is no module to import.
 

@@ -6,7 +6,7 @@ description: Scaffold a new Friday command from a template. Prompts for a name a
 
 Build a new Friday command from scratch. This command prompts you for a name and a purpose, then scaffolds `commands/<name>.md` with the right frontmatter and structure. You fill in the steps.
 
-You, Claude, run the whole flow below in order, using your own file tools. Nothing phones home. Everything happens in this session.
+You, Claude, run the whole flow below in order, using your own file tools. Everything happens in this session.
 
 ## Step 1: Read the founder's voice profile (if it exists)
 
@@ -63,7 +63,7 @@ description: <description>
 
 <description>
 
-You, Claude, run the whole flow below in order, using your own file tools. Nothing phones home. Everything happens in this session.
+You, Claude, run the whole flow below in order, using your own file tools. Everything happens in this session.
 
 ## Step 1: Read the founder's voice profile (if it exists)
 

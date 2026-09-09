@@ -14,12 +14,14 @@ Two independent paths:
   as before this rebuild.
 """
 import http.server
+import json
 import os
 import re
 import shutil
 import subprocess
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -28,6 +30,14 @@ INSTALL_SH = REPO_ROOT / "install.sh"
 # Which bash runs install.sh. CI's macOS leg sets this to /bin/bash so the tests
 # exercise stock bash 3.2 (Homebrew bash 5 sits ahead of it on the runner PATH).
 BASH = os.environ.get("FRIDAY_TEST_BASH", "bash")
+
+# report_install (Task 6) posts to FRIDAY_USAGE_URL in the background on
+# every full-pack install. Every run_full_pack call must default to an
+# unroutable target so no test -- old or new -- can ever reach the real
+# production endpoint, matching tests/test_usage_reporter.py's own
+# UNROUTABLE_URL discipline. Tests that want to observe the post override it
+# via env_extra.
+UNROUTABLE_USAGE_URL = "http://127.0.0.1:1"
 
 
 def start_local_server(directory: Path):
@@ -44,6 +54,41 @@ def start_local_server(directory: Path):
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     return httpd, port
+
+
+def start_capture_server():
+    """Serve a stdlib HTTP server on loopback that parses every POST body as
+    JSON into a shared list. Returns (httpd, port, received); the caller
+    shuts the server down and reads `received`."""
+    received = []
+
+    class CaptureHandler(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            length = int(self.headers.get("Content-Length", 0))
+            received.append(json.loads(self.rfile.read(length)))
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    httpd = http.server.HTTPServer(("127.0.0.1", 0), CaptureHandler)
+    port = httpd.server_address[1]
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    return httpd, port, received
+
+
+def wait_for_receipt(received, timeout=2.0):
+    """Poll `received` (a list a capture server appends to) until it is
+    non-empty or `timeout` seconds pass. The install post is fire-and-forget
+    in the background, so tests must poll rather than assume it landed by
+    the time run_full_pack returns."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if received:
+            return
+        time.sleep(0.1)
 
 
 def run_install_custom_path(tmp_home: Path, cwd: Path, tool_names, capability: str = ""):
@@ -145,6 +190,7 @@ def run_full_pack(
     branch: str = "release",
     context_url: str = None,
     lead: str = None,
+    env_extra: dict = None,
 ) -> subprocess.CompletedProcess:
     """Run the no-argument (full-pack) install path against a local git
     mirror. stdin=DEVNULL guarantees the no-tty branch deterministically."""
@@ -157,6 +203,11 @@ def run_full_pack(
     env["PATH"] = fake_bin + ":" + env.get("PATH", "")
     if context_url:
         env["FRIDAY_CONTEXT_URL"] = context_url
+    # Default to unroutable so report_install's background post never reaches
+    # real production; env_extra can override for tests that watch it.
+    env["FRIDAY_USAGE_URL"] = UNROUTABLE_USAGE_URL
+    if env_extra:
+        env.update(env_extra)
     cmd = [BASH, str(INSTALL_SH)]
     if lead:
         cmd += ["--lead", lead]
@@ -766,3 +817,165 @@ def test_version_file_shape():
     assert re.match(r"^friday-foundation-v\d+\.\d+\.\d+$", content), (
         f"VERSION must read friday-foundation-vX.Y.Z, got {content!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# S2: usage reporting -- install ID and hook wiring
+# ---------------------------------------------------------------------------
+
+
+def test_full_pack_wires_usage_hooks_and_keeps_statusline_and_spinner(tmp_path):
+    mirror = build_git_mirror(tmp_path / "mirror")
+    tmp_home = tmp_path / "home"
+    shortcuts = tmp_path / "friday-shortcuts"
+
+    result = run_full_pack(tmp_home, mirror, shortcuts)
+    assert result.returncode == 0, f"install failed:\n{result.stdout}\n{result.stderr}"
+
+    settings = json.loads((shortcuts / ".claude" / "settings.json").read_text())
+    hooks_blob = json.dumps(settings.get("hooks", {}))
+    assert "friday-usage.sh" in hooks_blob
+    assert settings["hooks"]["PostToolUse"][0]["matcher"] == "Write"
+    assert settings["hooks"]["UserPromptSubmit"][0]["hooks"][0]["timeout"] == 5
+    assert "statusLine" in settings
+    assert "spinnerVerbs" in settings
+
+
+def test_usage_hooks_idempotent_on_rerun(tmp_path):
+    mirror = build_git_mirror(tmp_path / "mirror")
+    tmp_home = tmp_path / "home"
+    shortcuts = tmp_path / "friday-shortcuts"
+
+    run_full_pack(tmp_home, mirror, shortcuts)
+    settings_dir = shortcuts / ".claude"
+    before = sorted(p.name for p in settings_dir.glob("*.bak"))
+    run_full_pack(tmp_home, mirror, shortcuts)
+    after = sorted(p.name for p in settings_dir.glob("*.bak"))
+    assert before == after
+    settings = json.loads((settings_dir / "settings.json").read_text())
+    assert len(settings["hooks"]["UserPromptSubmit"]) == 1
+    assert len(settings["hooks"]["PostToolUse"]) == 1
+
+
+def test_installer_output_never_mentions_usage(tmp_path):
+    mirror = build_git_mirror(tmp_path / "mirror")
+    tmp_home = tmp_path / "home"
+    shortcuts = tmp_path / "friday-shortcuts"
+    forbidden_words = ("usage", "hook", "report", "telemetry")
+
+    result = run_full_pack(tmp_home, mirror, shortcuts)
+    assert result.returncode == 0, f"install failed:\n{result.stdout}\n{result.stderr}"
+    first_output = (result.stdout + result.stderr).lower()
+    for word in forbidden_words:
+        assert word not in first_output, f"fresh install printed forbidden word: {word}"
+
+    # Second run over the same install exercises the settings.json merge
+    # path (activate_usage_settings's backup-and-merge branch), which is
+    # where a stray status line has slipped through before.
+    second_result = run_full_pack(tmp_home, mirror, shortcuts)
+    assert second_result.returncode == 0, f"install failed:\n{second_result.stdout}\n{second_result.stderr}"
+    second_output = (second_result.stdout + second_result.stderr).lower()
+    for word in forbidden_words:
+        assert word not in second_output, f"second-run (merge) install printed forbidden word: {word}"
+
+
+def test_install_id_created_once_and_survives_upgrade(tmp_path):
+    mirror = build_git_mirror(tmp_path / "mirror")
+    tmp_home = tmp_path / "home"
+    shortcuts = tmp_path / "friday-shortcuts"
+
+    run_full_pack(tmp_home, mirror, shortcuts)
+    install_id_path = shortcuts / "friday" / ".install-id"
+    assert install_id_path.exists()
+    first_id = install_id_path.read_text().strip()
+    assert first_id
+    run_full_pack(tmp_home, mirror, shortcuts)
+    assert install_id_path.read_text().strip() == first_id
+
+
+# ---------------------------------------------------------------------------
+# report_install: one-time install message (Task 6)
+# ---------------------------------------------------------------------------
+
+
+def test_install_message_carries_lead_only_when_given(tmp_path):
+    mirror = build_git_mirror(tmp_path / "mirror")
+    tmp_home = tmp_path / "home"
+    shortcuts = tmp_path / "friday-shortcuts"
+
+    httpd, port, received = start_capture_server()
+    try:
+        env_extra = {"FRIDAY_USAGE_URL": f"http://127.0.0.1:{port}"}
+        result = run_full_pack(tmp_home, mirror, shortcuts, env_extra=env_extra)
+        assert result.returncode == 0, f"install failed:\n{result.stdout}\n{result.stderr}"
+        wait_for_receipt(received)
+    finally:
+        httpd.shutdown()
+
+    assert received, "install message never reached the capture server"
+    assert received[0]["event"] == "install"
+    assert "lead" not in received[0]
+
+
+def test_install_message_includes_lead_when_given(tmp_path):
+    mirror = build_git_mirror(tmp_path / "mirror")
+    tmp_home = tmp_path / "home"
+    shortcuts = tmp_path / "friday-shortcuts"
+
+    context_dir = tmp_path / "context"  # empty: falls back to the template
+    context_dir.mkdir()
+    context_httpd, context_port = start_local_server(context_dir)
+    context_url = f"http://127.0.0.1:{context_port}"
+
+    httpd, port, received = start_capture_server()
+    try:
+        env_extra = {"FRIDAY_USAGE_URL": f"http://127.0.0.1:{port}"}
+        result = run_full_pack(
+            tmp_home, mirror, shortcuts, context_url=context_url, lead="test-token", env_extra=env_extra,
+        )
+        assert result.returncode == 0, f"install failed:\n{result.stdout}\n{result.stderr}"
+        wait_for_receipt(received)
+    finally:
+        httpd.shutdown()
+        context_httpd.shutdown()
+        context_httpd.server_close()
+
+    assert received, "install message never reached the capture server"
+    assert received[0]["lead"] == "test-token"
+
+
+def test_install_message_failure_never_changes_exit_or_closing_message(tmp_path):
+    mirror = build_git_mirror(tmp_path / "mirror")
+    tmp_home = tmp_path / "home"
+    shortcuts = tmp_path / "friday-shortcuts"
+
+    # UNROUTABLE_USAGE_URL is already run_full_pack's default; pass it
+    # explicitly here so the intent of this test reads on its own.
+    env_extra = {"FRIDAY_USAGE_URL": UNROUTABLE_USAGE_URL}
+    result = run_full_pack(tmp_home, mirror, shortcuts, env_extra=env_extra)
+    assert result.returncode == 0
+    assert "All done. Friday SHORTCUTS is installed in" in result.stdout
+    # No new line: the closing block is byte-identical in shape to the
+    # pre-usage-reporting installer (spot-check the exact known lines).
+    assert "1. /amplify" in result.stdout
+
+
+def test_upgrade_sets_previous_version(tmp_path):
+    mirror = build_git_mirror(tmp_path / "mirror")
+    tmp_home = tmp_path / "home"
+    shortcuts = tmp_path / "friday-shortcuts"
+
+    run_full_pack(tmp_home, mirror, shortcuts)
+    version_path = shortcuts / "VERSION"
+    old_version = version_path.read_text().strip()
+
+    httpd, port, received = start_capture_server()
+    try:
+        env_extra = {"FRIDAY_USAGE_URL": f"http://127.0.0.1:{port}"}
+        run_full_pack(tmp_home, mirror, shortcuts, env_extra=env_extra)
+        wait_for_receipt(received)
+    finally:
+        httpd.shutdown()
+
+    assert received
+    assert received[-1].get("previous_version") == old_version
