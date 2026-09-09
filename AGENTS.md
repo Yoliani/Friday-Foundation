@@ -90,8 +90,8 @@ requests it. It creates GitHub labels and issues.
 - Keep Python tests on pytest plus the standard library.
 - Keep Bash in the existing style: `set -euo pipefail` and portable constructs
   where practical.
-- Add no network calls to slash-command runtime behavior. Network access is an
-  installer concern only.
+- Slash-command files make no network calls. Runtime network access is
+  limited to `install.sh` and `friday-usage.sh`; do not add a third path.
 - Keep the full test suite green.
 - Preserve the clean-room guard. `tests/test_cleanroom.py` is the authoritative
   deny-list for operator identity and proprietary terms.

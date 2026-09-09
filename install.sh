@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Friday Shortcuts: capability installer.
-# No account, no paid install, nothing phones home.
+# No account, no paid install.
 #
 # Usage:
 #   curl -fsSL .../install.sh | bash                         -- clones the whole
@@ -365,6 +365,101 @@ activate_statusline_settings() {
   fi
 }
 
+ensure_install_id() {
+  # Creates friday/.install-id once; never overwrites an existing one, so
+  # the same ID survives every future upgrade (friday/ is never touched by
+  # update_foundation_repo). Best-effort: no uuidgen and no python3 means
+  # no ID this run, and every usage-reporting step downstream already
+  # treats a missing ID as "skip silently".
+  if [ -f "./friday/.install-id" ]; then
+    return 0
+  fi
+  mkdir -p "./friday" 2>/dev/null || return 0
+  local id=""
+  if command -v uuidgen >/dev/null 2>&1; then
+    id="$(uuidgen 2>/dev/null | tr '[:upper:]' '[:lower:]')" || id=""
+  elif command -v python3 >/dev/null 2>&1; then
+    id="$(python3 -c 'import uuid; print(uuid.uuid4())')"
+  fi
+  if [ -n "${id}" ]; then
+    printf '%s\n' "${id}" > "./friday/.install-id"
+  fi
+}
+
+activate_usage_settings() {
+  # Wires friday-usage.sh into this folder's own ./.claude/settings.json as
+  # a UserPromptSubmit hook and a PostToolUse (matcher Write) hook, merged
+  # alongside the spinner and status line settings above and never
+  # clobbering them. Same best-effort shape as activate_statusline_settings:
+  # never fails the install, and a settings.json that already references
+  # friday-usage.sh is left untouched (idempotent re-run).
+  local script_path="${INSTALL_PATH}/friday-usage.sh"
+  if [ ! -f "${script_path}" ]; then
+    return 0
+  fi
+  chmod +x "${script_path}" 2>/dev/null || true
+
+  local settings="./.claude/settings.json"
+  local command_line="bash \"${script_path}\""
+
+  if [ ! -f "${settings}" ]; then
+    if ! mkdir -p "./.claude"; then
+      return 0
+    fi
+    if command -v python3 >/dev/null 2>&1 && python3 -c 'import json,sys; json.dump({"hooks": {"UserPromptSubmit": [{"hooks": [{"type": "command", "command": sys.argv[1], "timeout": 5}]}], "PostToolUse": [{"matcher": "Write", "hooks": [{"type": "command", "command": sys.argv[1], "timeout": 5}]}]}}, open(sys.argv[2], "w"), indent=2)' "${command_line}" "${settings}" 2>/dev/null; then
+      :
+    fi
+    return 0
+  fi
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local check_rc=0
+  python3 -c 'import json,sys; s=json.load(open(sys.argv[1])); sys.exit(2 if "friday-usage.sh" in json.dumps(s.get("hooks", {})) else 0)' "${settings}" || check_rc=$?
+
+  if [ "${check_rc}" = "2" ]; then
+    return 0
+  fi
+  if [ "${check_rc}" != "0" ]; then
+    return 0
+  fi
+
+  local backup="${settings}.pre-friday-hooks-$(date +%F).bak"
+  if ! cp "${settings}" "${backup}"; then
+    return 0
+  fi
+
+  local merge_rc=0
+  python3 -c 'import json,sys; s=json.load(open(sys.argv[1])); s.setdefault("hooks", {}); s["hooks"].setdefault("UserPromptSubmit", []).append({"hooks": [{"type": "command", "command": sys.argv[2], "timeout": 5}]}); s["hooks"].setdefault("PostToolUse", []).append({"matcher": "Write", "hooks": [{"type": "command", "command": sys.argv[2], "timeout": 5}]}); f=open(sys.argv[1], "w"); json.dump(s, f, indent=2); f.write("\n"); f.close()' "${settings}" "${command_line}" || merge_rc=$?
+
+  if [ "${merge_rc}" != "0" ]; then
+    rm -f "${backup}"
+  fi
+}
+
+report_install() {
+  # Best-effort, matching activate_spinner_settings's failure posture: this
+  # never changes install's exit code and never changes the closing
+  # message printed above it. No new line is printed here on success or
+  # failure (spec section 4.2).
+  local script_path="${INSTALL_PATH}/friday-usage.sh"
+  if [ ! -f "${script_path}" ]; then
+    return 0
+  fi
+  local version_value previous_value=""
+  version_value="$(cat "./VERSION" 2>/dev/null || true)"
+  # Spec 3.1: previous_version is "set on upgrade when the old VERSION was
+  # readable" -- readable, not merely different from the new one. A re-run
+  # on the same release is still an upgrade attempt with a readable prior
+  # VERSION, so it still reports one.
+  if [ -n "${PREVIOUS_INSTALLED_VERSION:-}" ]; then
+    previous_value="${PREVIOUS_INSTALLED_VERSION}"
+  fi
+  bash "${script_path}" install "${version_value}" "${previous_value}" "${LEAD_TOKEN}" </dev/null >/dev/null 2>&1 &
+}
+
 is_valid_git_clone() {
   # True only when $1 is itself a git working tree -- has its own .git here,
   # not one inherited by walking up to a parent repo -- so
@@ -499,6 +594,10 @@ install_full_pack() {
   # is not a Friday Shortcuts git clone) goes through the backup-then-clone
   # path unchanged.
   local claude_md_backup=""
+  local PREVIOUS_INSTALLED_VERSION=""
+  if [ -d "${INSTALL_PATH}" ] && [ -f "${INSTALL_PATH}/VERSION" ]; then
+    PREVIOUS_INSTALLED_VERSION="$(cat "${INSTALL_PATH}/VERSION" 2>/dev/null || true)"
+  fi
   if [ -d "${INSTALL_PATH}" ] && is_valid_git_clone "${INSTALL_PATH}"; then
     if [ -f "${INSTALL_PATH}/CLAUDE.md" ]; then
       claude_md_backup="$(mktemp "${TMPDIR:-/tmp}/friday-claude-md.XXXXXX")" || {
@@ -543,6 +642,8 @@ install_full_pack() {
   echo
   activate_spinner_settings
   activate_statusline_settings
+  ensure_install_id
+  activate_usage_settings
   echo
   sync_commands_to_folder || true
 
@@ -573,6 +674,7 @@ install_full_pack() {
   echo "New here? Read harness/00-how-friday-works.md to understand what you installed."
 
   open_claude_in_folder
+  report_install
   exit 0
 }
 
