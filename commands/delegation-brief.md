@@ -48,7 +48,7 @@ Wait for their answer.
 
 ## Step 6: Write the delegation brief
 
-Derive a short kebab-case slug from the task name. Create the `friday/delegation/` folder if it does not exist. Before writing, look at `friday/delegation/<slug>.md`, then `<slug>-2.md`, then `<slug>-3.md`, and so on, until you reach a path that does not exist. If one of the files you passed names this task on its first line, update that file in place; that is a revision, not a collision. If none of them does, write to the path where you stopped. Never overwrite a brief for a different task, and if you cannot tell, treat it as different. If the founder explicitly wants to replace an existing brief for a different task, confirm with them before overwriting.
+Derive a short kebab-case slug from the task name. Create the `friday/delegation/` folder if it does not exist. Before writing, look at `friday/delegation/<slug>.md`, then `<slug>-2.md`, then `<slug>-3.md`, and so on, until you reach a path that does not exist. If one of the files you passed names this task on its first line, update that file in place; that is a revision, not a collision. If none of them does, write to the path where you stopped. Never overwrite a brief for a different task, and if you cannot tell, treat it as different. If the founder wants an old brief gone, they delete it themselves.
 
 Use this structure:
 
@@ -77,6 +77,8 @@ Write in the founder's voice. If their profile lists banned words, do not use an
 After writing, print:
 
 > Delegation brief saved to `friday/delegation/<slug>.md`. Hand it over, and make sure every open question is answered before they start.
+
+If you wrote to a numbered path, print that path instead.
 
 ## What this does not do
 
